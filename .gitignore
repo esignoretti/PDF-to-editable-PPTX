@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Local scratch produced while running the skill
+slide_full.png
+render.png
+bg_fit.png
+icons/
+icons_sheet.png
+compare.png
+*.pdf
+!docs/**/*.pdf
