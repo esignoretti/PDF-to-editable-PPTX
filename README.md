@@ -1,15 +1,21 @@
-# PDF → editable PPTX
+# Slide PDF or HTML → editable PPTX
 
 Turn an **image-only slide PDF** — a scanned deck, or a single-image export with no
-text layer — into a **fully editable PowerPoint `.pptx`**.
+text layer — **or an HTML slide/deck export** into a **fully editable PowerPoint
+`.pptx`**.
 
 Not a tracer. Not OCR. The slide is **measured and rebuilt**: cards, pills, accent
 borders and dividers come back as native PowerPoint shapes, every string comes back
 as a real text box, and only the backdrop and the icons stay raster.
 
 ```
-source PDF (one 3840×2160 image)  →  editable PPTX (native shapes + text)
+source PDF (one 3840×2160 image)  ┐
+                                  ├─→  editable PPTX (native shapes + text)
+source HTML slide / deck          ┘
 ```
+
+Both sources converge immediately: get the slide as a raster, then measure and
+rebuild it. The HTML path renders at 2× and clips to a single slide element.
 
 ---
 
@@ -31,6 +37,7 @@ slide as native objects.
 | Icons | transparent PNGs cut from the source at native resolution |
 | Backdrop | a smooth polynomial fit — no text or icons baked in |
 | Fidelity | ~20/765 mean per-pixel error vs the source; text within ~0.1% of position |
+| Sources | image-only PDF (embedded raster) · HTML slide or deck |
 
 ## Install
 
@@ -51,6 +58,22 @@ Restart (or refresh) Open Design, then ask:
 See **[INSTALL.md](INSTALL.md)** for manual install, verification, updates and
 troubleshooting.
 
+### HTML sources
+
+```bash
+python skill/scripts/render_html.py deck.html --list-slides            # what slides exist
+python skill/scripts/render_html.py deck.html --out slide.png --mode slide --slide 3
+python skill/scripts/render_html.py deck.html --out slide.png          # single-slide HTML
+python skill/scripts/render_html.py deck.html --out all.png --mode full  # scroll deck
+python skill/scripts/render_html.py --classify somefile                # pdf | html | image
+```
+
+`--mode slide` clips the screenshot to the Nth element matching `--selector`
+(default `.slide`), so it works on any deck without knowing its markup. Playwright
+is used when importable (exact element clips + device scale factor); otherwise a
+local Chrome/Chromium renders the viewport. `--scale 2` on a 1920×1080 viewport
+gives the 3840×2160 raster the rest of the pipeline expects.
+
 ### Using it outside Open Design
 
 `skill/` is a plain skill folder (`SKILL.md` + `scripts/`). It works anywhere an
@@ -66,21 +89,23 @@ from extract_icons import extract, contact_sheet
 
 ## Triggers
 
-`pdf to pptx` · `convert pdf slide to powerpoint` · `editable pptx` ·
-`image-only pdf` · `scanned slide pdf` · `pdf has no text layer` ·
-`page.get_text returns nothing` · `make this slide editable` ·
-`rebuild this slide in powerpoint`
+`pdf to pptx` · `convert pdf slide to powerpoint` · `html to pptx` ·
+`convert html slide to powerpoint` · `editable pptx` · `image-only pdf` ·
+`scanned slide pdf` · `pdf has no text layer` · `page.get_text returns nothing` ·
+`make this slide editable` · `rebuild this slide in powerpoint`
 
 ## How it works
 
 ```
-extract native raster → measure → calibrate fonts → extract icons
-   → fit backdrop + derive card fills → build → render & diff → nudge → ship
+get a raster (PDF embed, or render HTML) → measure → calibrate fonts
+   → extract icons → fit backdrop + derive card fills → build
+   → render & diff → nudge → ship
 ```
 
-1. **Extract** the embedded raster at native resolution. The host PDF preview can
-   carry a broken colour profile, so colours are sampled from the extracted pixels,
-   never from a thumbnail.
+1. **Get a raster.** For a PDF, extract the embedded image at native resolution — the
+   host PDF preview can carry a broken colour profile, so colours are sampled from the
+   extracted pixels, never from a thumbnail. For HTML, render it at 2× with
+   `render_html`.
 2. **Measure** every card edge, divider, text line and icon in percent of slide.
 3. **Calibrate** font sizes by fitting the real font's advance width to the measured
    ink width. Letter-spaced labels are split into cap-height size + tracking.
@@ -105,6 +130,7 @@ PDF-to-editable-PPTX/
 ├── skill/
 │   ├── SKILL.md               the technique: pipeline, gotchas, red flags
 │   └── scripts/
+│       ├── render_html.py     HTML slide/deck → high-resolution PNG
 │       ├── pptx_helpers.py    fills, gradients + alpha, custom-dash lines,
 │       │                      rounded rects, text boxes, accent top borders
 │       ├── measure_slide.py   edge / text-line / ink measurement, colour masks,
@@ -122,6 +148,11 @@ PDF-to-editable-PPTX/
   python3 -m venv .venv
   .venv/bin/pip install python-pptx Pillow numpy scipy pymupdf
   ```
+- For **HTML sources**, a renderer: Playwright (recommended — exact element clips)
+  ```bash
+  .venv/bin/pip install playwright && .venv/bin/playwright install chromium
+  ```
+  or any local Google Chrome / Chromium / Edge, which needs no extra install.
 - **macOS** for the Open Design installer path (skill directories live under
   `~/Library/Application Support/Open Design/…`). The skill itself is portable.
 - Optional, for the verification step: **LibreOffice** (`soffice`).
@@ -134,6 +165,8 @@ PDF-to-editable-PPTX/
 - The backdrop and icons stay raster. That is deliberate — it is what keeps the
   fidelity high.
 - Built for **single-slide or few-slide brand decks**, not 200-page documents.
+- HTML decks are captured as a raster (then rebuilt), not parsed into shapes. If the
+  HTML slide is not 16:9, build the PPTX at the matching slide size.
 - `plugin/open-design.json` follows Open Design's `plugin.v1.json` schema but has
   not been validated by their `od plugin validate` tooling, which is not part of
   the shipped CLI.

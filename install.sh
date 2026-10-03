@@ -72,6 +72,18 @@ check_python() {
   printf '\n  Fix any MISSING with:\n'
   printf '    python3 -m venv ~/.od-skills/image-pdf-to-pptx/.venv\n'
   printf '    ~/.od-skills/image-pdf-to-pptx/.venv/bin/pip install python-pptx Pillow numpy scipy pymupdf\n'
+
+  printf '\nHTML source support (optional - only needed for .html slides)\n'
+  if python3 -c "import playwright" >/dev/null 2>&1; then
+    printf '  playwright   ok (exact element clips)\n'
+  else
+    printf '  playwright   MISSING - falls back to a local Chrome/Chromium\n'
+  fi
+  if [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]; then
+    printf '  chrome       ok\n'
+  else
+    printf '  chrome       not found in /Applications\n'
+  fi
 }
 
 check_python

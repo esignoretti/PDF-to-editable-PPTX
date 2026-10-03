@@ -1,14 +1,16 @@
 ---
 name: image-pdf-to-pptx
 description: |
-  Convert an image-only or scanned slide PDF (or a single-slide PDF export) into a
+  Convert an image-only or scanned slide PDF, or an HTML slide/deck export, into a
   fully editable PowerPoint .pptx. Rebuilds layout, fonts, colours, icons and card
   translucency as native shapes and text boxes instead of tracing or OCR. Use when a
-  slide PDF has no text layer, page.get_text() returns nothing, or one embedded image
-  per page, and the result must stay editable in PowerPoint.
+  slide PDF has no text layer, page.get_text() returns nothing, one embedded image per
+  page, or when an HTML slide must come back as editable PowerPoint.
 triggers:
   - "pdf to pptx"
   - "convert pdf slide to powerpoint"
+  - "html to pptx"
+  - "convert html slide to powerpoint"
   - "editable pptx"
   - "image-only pdf"
   - "scanned slide pdf"
@@ -22,14 +24,22 @@ od:
   upstream: "local"
 ---
 
-# Image-only slide PDF → editable PPTX
+# Slide PDF or HTML → editable PPTX
 
 ## Overview
 
 **Rebuild, don't trace.** A "convert to editable" tool that OCRs or traces vectors
-gives you uneditable garbage. Instead: measure the raster precisely, then emit
-native PowerPoint shapes and text boxes. The *only* raster left in the result is
-the backdrop and the icons.
+gives you uneditable garbage. Instead: get the slide as a raster, measure it
+precisely, then emit native PowerPoint shapes and text boxes. The *only* raster
+left in the result is the backdrop and the icons.
+
+Two sources are supported and they converge immediately:
+
+- **PDF** — image-only / scanned / single-image export: pull the embedded raster.
+- **HTML** — a slide or deck export: render it to a raster at 2x with
+  `render_html`, clipping to one slide element when the deck has many.
+
+Everything after phase 1 is source-agnostic.
 
 Result of this method: mean per-pixel error ~20/765 against the source, every text
 element within ~0.1% of its original position, and 100% of the copy as real text.
@@ -37,6 +47,7 @@ element within ~0.1% of its original position, and 100% of the copy as real text
 ## When to use
 
 - `page.get_text()` is empty / the PDF is one embedded image (check first, phase 1).
+- The source is an HTML slide or deck and the user wants an editable `.pptx`.
 - Brand slide decks (cards, pills, accent borders, custom icons, soft gradients).
 - The user will edit the text/layout afterwards.
 
@@ -46,14 +57,23 @@ Don't use when a rough look-alike is acceptable.
 ## Pipeline
 
 ```
-extract native raster → measure → calibrate fonts → extract icons
-   → fit backdrop + derive card fills → build → render & diff → nudge → ship
+get a raster (PDF embed, or render HTML) → measure → calibrate fonts
+   → extract icons → fit backdrop + derive card fills → build → render & diff
+   → nudge → ship
 ```
 
 ## Setup
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install python-pptx Pillow numpy scipy pymupdf
+```
+
+For **HTML sources** add a renderer — either Playwright (recommended: exact
+element clips) or any local Chrome/Chromium:
+
+```bash
+.venv/bin/pip install playwright && .venv/bin/playwright install chromium
+# or: nothing to install if Google Chrome / Chromium / Edge is in /Applications
 ```
 
 The helper modules live in this skill's `scripts/` — add it to `sys.path` (or copy
@@ -73,6 +93,8 @@ seconds — you will iterate it 3–5 times in phase 7.
 | Need | Tool |
 |---|---|
 | Native raster + resolution | `pymupdf` `page.get_images()` / `Pixmap` |
+| HTML slide/deck → raster | `render_html.render` / `--mode slide` |
+| Is this a pdf, html or image? | `render_html.classify` |
 | Card edges, dividers | `measure_slide.edges_col` / `edges_row` |
 | Every text line's y | `measure_slide.text_rows` |
 | One string's exact ink box | `measure_slide.ink_bbox` |
@@ -83,7 +105,7 @@ seconds — you will iterate it 3–5 times in phase 7.
 | Backdrop image + card fill gradients | `fit_background.BackgroundFit` |
 | Shapes / text / top-border arcs | `pptx_helpers` |
 
-## Phase 1 — extract, and do not trust the preview
+## Phase 1 — get a raster, and do not trust the preview
 
 ```python
 import pymupdf
@@ -101,6 +123,30 @@ Always inspect the extracted PNG, and sample colours from it numerically.
 
 Geometry: `page.rect` 960×540 → 16:9 → build at **13.333 × 7.5 in**. A 3840 px
 wide raster therefore maps **1 px = 0.25 pt** (use this for font sizes).
+
+### HTML sources
+
+Render the slide — do not try to parse the DOM into shapes.
+
+```bash
+python scripts/render_html.py deck.html --list-slides                 # what slides exist
+python scripts/render_html.py deck.html --out slide.png --mode slide --slide 3
+python scripts/render_html.py deck.html --out slide.png               # single-slide HTML
+python scripts/render_html.py deck.html --out all.png --mode full     # scroll deck
+python scripts/render_html.py --classify somefile                     # pdf | html | image
+```
+
+- `--mode slide` clips the screenshot to the Nth element matching `--selector`
+  (default `.slide`). That is the deck-agnostic way to pull one slide out of a
+  multi-slide document — no knowledge of the deck's own markup required.
+- `--scale 2` on a 1920×1080 viewport yields the 3840×2160 raster the rest of the
+  pipeline expects. `--scale 1` halves the file size at some accuracy cost.
+- Playwright is used when importable (exact element clips + device scale factor);
+  otherwise a local Chrome/Chromium headless binary renders the viewport.
+- Render at the deck's own aspect ratio. If the HTML slide is not 16:9, build the
+  PPTX at the matching slide size rather than forcing 13.333 × 7.5 in.
+- Let webfonts settle before capturing (`--wait`, default 700 ms) or you will
+  measure a fallback face and calibrate the wrong sizes.
 
 ## Phase 2 — measure
 
@@ -218,6 +264,9 @@ that, and you correct the rest with `yc -= dy`. Two or three iterations reaches
 | Text a hair too low everywhere | `yc -= dy` from a two-image ink measurement |
 | Wrapped line breaks differ | One text box per source line, positioned at its ink centre |
 | Weights look off | Use the real family name (`Source Sans 3 Semibold`), not `bold=True` |
+| HTML deck renders the wrong slide | `--mode slide --slide N` with `--list-slides` to confirm the index |
+| HTML render is 1x and blurry | Pass `--scale 2`; the pipeline wants ~3840 px wide |
+| HTML text measured in the wrong face | Raise `--wait` so webfonts load before the screenshot |
 
 ## Red flags — stop and re-check
 
@@ -229,6 +278,6 @@ that, and you correct the rest with `yc -= dy`. Two or three iterations reaches
 
 ## Ship
 
-Save the `.pptx` plus a PNG preview next to it. State the font requirement
-(Titillium Web / Source Sans 3 from Google Fonts, or substitution shifts line
-widths) and what stayed raster (backdrop + icons).
+Save the `.pptx` plus a PNG preview next to it. State the source (PDF embed or
+HTML render), the font requirement (or substitution shifts line widths) and what
+stayed raster (backdrop + icons).

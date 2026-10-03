@@ -2,22 +2,24 @@
   "$schema": "https://open-design.ai/schemas/plugin.v1.json",
   "specVersion": "1.0.0",
   "name": "image-pdf-to-pptx",
-  "title": "Image-only slide PDF → editable PPTX",
+  "title": "Image-only slide PDF \u2192 editable PPTX",
   "version": "0.1.0",
-  "description": "Convert an image-only or scanned slide PDF into a fully editable PowerPoint .pptx by measuring the raster and rebuilding it as native shapes and text boxes. Icons and the backdrop are the only raster left in the result.",
+  "description": "Convert an image-only or scanned slide PDF, or an HTML slide/deck export, into a fully editable PowerPoint .pptx by measuring the raster and rebuilding it as native shapes and text boxes.",
   "license": "MIT",
   "author": {
     "name": "esignoretti"
   },
   "tags": [
-    "deck",
-    "slides",
-    "pptx",
-    "pdf",
+    "brand",
     "conversion",
+    "deck",
     "editable",
+    "html",
+    "html-to-pptx",
+    "pdf",
+    "pptx",
     "rebuild",
-    "brand"
+    "slides"
   ],
   "compat": {
     "agentSkills": [
@@ -39,7 +41,7 @@
       "subprocess"
     ],
     "useCase": {
-      "query": "Convert this slide PDF to an editable PPTX. It has no text layer — rebuild the layout, fonts, colours, icons and card translucency as native PowerPoint shapes and text boxes, then verify by rendering the result back and diffing it against the source.",
+      "query": "Convert this slide PDF to an editable PPTX. It has no text layer \u2014 rebuild the layout, fonts, colours, icons and card translucency as native PowerPoint shapes and text boxes, then verify by rendering the result back and diffing it against the source.",
       "exampleOutputs": []
     },
     "context": {
@@ -52,7 +54,8 @@
         "./scripts/pptx_helpers.py",
         "./scripts/measure_slide.py",
         "./scripts/fit_background.py",
-        "./scripts/extract_icons.py"
+        "./scripts/extract_icons.py",
+        "./scripts/render_html.py"
       ]
     }
   }

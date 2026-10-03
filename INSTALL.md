@@ -62,6 +62,15 @@ Check what is missing at any time:
 ./install.sh --check
 ```
 
+For **HTML sources**, a renderer. Playwright gives exact element clips:
+
+```bash
+~/.od-skills/image-pdf-to-pptx/.venv/bin/pip install playwright
+~/.od-skills/image-pdf-to-pptx/.venv/bin/playwright install chromium
+```
+
+or rely on a local Google Chrome / Chromium / Edge, which needs no extra install.
+
 Optional, only for the skill's self-verification step: **LibreOffice** (`soffice`).
 The skill renders its own PPTX back to an image and diffs it against the source, and
 it needs `FONTCONFIG_PATH` set so LibreOffice does not silently substitute fonts.
@@ -98,6 +107,8 @@ git pull
 | `ModuleNotFoundError: pptx` / `fitz` | Install the Python deps in the interpreter the agent uses; run `./install.sh --check` |
 | Output fonts look substituted | Install *Titillium Web* and *Source Sans 3*; for verification set `FONTCONFIG_PATH=/opt/homebrew/etc/fonts` |
 | Skill installed but never triggers | Ask explicitly: "convert this slide PDF to an editable PPTX" |
+| HTML deck renders the wrong slide | `render_html.py deck.html --list-slides` then `--mode slide --slide N` |
+| HTML render is blurry / wrong scale | Pass `--scale 2`; the pipeline wants ~3840 px wide |
 | Wrong colours reproduced | You are matching a broken PDF thumbnail; the skill samples the extracted raster — check the source PDF really has one embedded image |
 
 ## Using it without Open Design
