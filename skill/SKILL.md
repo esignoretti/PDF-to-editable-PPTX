@@ -57,9 +57,10 @@ Don't use when a rough look-alike is acceptable.
 ## Pipeline
 
 ```
-get a raster (PDF embed, or render HTML) → measure → calibrate fonts
-   → extract icons → fit backdrop + derive card fills → build → render & diff
-   → nudge → ship
+HTML:  extract_dom → dom_to_pptx → render & diff → nudge → ship
+   PDF:   get raster → measure → calibrate fonts → extract icons
+          → fit backdrop + derive card fills → build → render & diff → nudge → ship
+   (HTML may also take the PDF route via render_html when the spec punts)
 ```
 
 ## Setup
@@ -94,6 +95,8 @@ seconds — you will iterate it 3–5 times in phase 7.
 |---|---|
 | Native raster + resolution | `pymupdf` `page.get_images()` / `Pixmap` |
 | HTML slide/deck → raster | `render_html.render` / `--mode slide` |
+| HTML slide → exact build spec | `extract_dom.extract` |
+| Build a PPTX from that spec | `dom_to_pptx.build` |
 | Is this a pdf, html or image? | `render_html.classify` |
 | Card edges, dividers | `measure_slide.edges_col` / `edges_row` |
 | Every text line's y | `measure_slide.text_rows` |
@@ -147,6 +150,45 @@ python scripts/render_html.py --classify somefile                     # pdf | ht
   PPTX at the matching slide size rather than forcing 13.333 × 7.5 in.
 - Let webfonts settle before capturing (`--wait`, default 700 ms) or you will
   measure a fallback face and calibrate the wrong sizes.
+
+### HTML fast path — read the DOM instead of measuring
+
+For an HTML source the browser already knows every position, colour, font size and
+tracking, so skip phases 2-4 entirely:
+
+```bash
+python scripts/extract_dom.py deck.html --out spec.json --assets assets
+python scripts/dom_to_pptx.py --spec spec.json --out deck.pptx
+# or both in one step:
+python scripts/dom_to_pptx.py --html deck.html --out deck.pptx --slide 2
+```
+
+`extract_dom` walks the slide subtree and emits an **ordered spec** (DOM order ==
+paint order):
+
+| kind | carries |
+|---|---|
+| `box` | border box, solid fill + alpha, linear gradient (stops + angle), border, radius |
+| `text` | **content** box, runs with exact family / size / weight / colour / tracking, align, line-height |
+| `svg` | box + inline `<svg>` rasterised to `assets/icon-N.png` at 3x |
+| `image` | box + `<img>` |
+
+`dom_to_pptx` maps CSS px → slide percent and pt and emits native shapes. Then
+verify exactly as in phase 7.
+
+**Prefer it** for any HTML source. **Fall back to the raster route** when
+`spec.warnings` is non-empty — the spec punts on non-identity transforms, radial
+gradients, `box-shadow`, `background-image` URLs, filter/blend and canvas/video.
+
+Three things that bite, in order:
+
+- Text nodes carry the **content box** (border box minus border and padding). Use
+  the border box instead and padded text — pills, buttons, cards — drops to the
+  top-left.
+- Single-line text is emitted with **wrapping off**. Let it wrap and a font that
+  renders a hair wider than the browser's breaks "SaaS" into "Saa / s".
+- `font-weight >= 600` maps to bold. For the exact SemiBold face, rewrite the
+  family to `<Family> SemiBold` in the spec.
 
 ## Phase 2 — measure
 
@@ -267,6 +309,9 @@ that, and you correct the rest with `yc -= dy`. Two or three iterations reaches
 | HTML deck renders the wrong slide | `--mode slide --slide N` with `--list-slides` to confirm the index |
 | HTML render is 1x and blurry | Pass `--scale 2`; the pipeline wants ~3840 px wide |
 | HTML text measured in the wrong face | Raise `--wait` so webfonts load before the screenshot |
+| Padded text jumps to the top-left | Text nodes must use the content box, not the border box |
+| Short labels wrap mid-word | Keep single-line text unwrapped |
+| DOM spec reports warnings | Those slides want the raster route instead |
 
 ## Red flags — stop and re-check
 
@@ -278,6 +323,6 @@ that, and you correct the rest with `yc -= dy`. Two or three iterations reaches
 
 ## Ship
 
-Save the `.pptx` plus a PNG preview next to it. State the source (PDF embed or
-HTML render), the font requirement (or substitution shifts line widths) and what
-stayed raster (backdrop + icons).
+Save the `.pptx` plus a PNG preview next to it. State the source (PDF embed, HTML
+render, or HTML DOM spec), the font requirement (or substitution shifts line
+widths) and what stayed raster (backdrop + icons).

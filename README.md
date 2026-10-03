@@ -36,7 +36,7 @@ slide as native objects.
 | Dashed dividers / arrows | native connectors with custom dash patterns and arrowheads |
 | Icons | transparent PNGs cut from the source at native resolution |
 | Backdrop | a smooth polynomial fit — no text or icons baked in |
-| Fidelity | ~20/765 mean per-pixel error vs the source; text within ~0.1% of position |
+| Fidelity | ~6/765 mean error on the HTML fast path, ~20/765 on the raster route |
 | Sources | image-only PDF (embedded raster) · HTML slide or deck |
 
 ## Install
@@ -60,6 +60,29 @@ troubleshooting.
 
 ### HTML sources
 
+HTML gets **two** routes. Prefer the fast path; keep the raster route for decks it
+can't express.
+
+**Fast path — read the DOM.** The browser already knows every position, colour,
+font size and tracking, so nothing is calibrated from pixels:
+
+```bash
+python skill/scripts/extract_dom.py deck.html --out spec.json --assets assets
+python skill/scripts/dom_to_pptx.py --spec spec.json --out deck.pptx
+# or both in one step:
+python skill/scripts/dom_to_pptx.py --html deck.html --out deck.pptx --slide 2
+```
+
+`extract_dom` walks the slide subtree and emits an ordered spec (DOM order == paint
+order): `box` (fill + alpha, linear gradient with stops and angle, border, radius),
+`text` (content box, runs with exact family/size/weight/colour/tracking, align,
+line-height), `svg` (rasterised to `assets/icon-N.png` at 3×) and `image`. On a
+typical branded slide this lands at **~6/765 mean error** — better than the raster
+route can reach, because nothing is guessed.
+
+**Raster route — render then measure.** Use it when the spec reports warnings, or
+for PDFs:
+
 ```bash
 python skill/scripts/render_html.py deck.html --list-slides            # what slides exist
 python skill/scripts/render_html.py deck.html --out slide.png --mode slide --slide 3
@@ -73,6 +96,10 @@ python skill/scripts/render_html.py --classify somefile                # pdf | h
 is used when importable (exact element clips + device scale factor); otherwise a
 local Chrome/Chromium renders the viewport. `--scale 2` on a 1920×1080 viewport
 gives the 3840×2160 raster the rest of the pipeline expects.
+
+The fast path punts on — and logs in `spec.warnings` — non-identity transforms,
+radial gradients, `box-shadow`, `background-image` URLs, filter/blend, `<canvas>`
+and `<video>`. When the list is non-empty, run the raster route for those slides.
 
 ### Using it outside Open Design
 
@@ -131,6 +158,8 @@ PDF-to-editable-PPTX/
 │   ├── SKILL.md               the technique: pipeline, gotchas, red flags
 │   └── scripts/
 │       ├── render_html.py     HTML slide/deck → high-resolution PNG
+│       ├── extract_dom.py     HTML slide DOM + computed CSS → exact build spec
+│       ├── dom_to_pptx.py     that spec → PPTX (the HTML fast path)
 │       ├── pptx_helpers.py    fills, gradients + alpha, custom-dash lines,
 │       │                      rounded rects, text boxes, accent top borders
 │       ├── measure_slide.py   edge / text-line / ink measurement, colour masks,
@@ -148,11 +177,13 @@ PDF-to-editable-PPTX/
   python3 -m venv .venv
   .venv/bin/pip install python-pptx Pillow numpy scipy pymupdf
   ```
-- For **HTML sources**, a renderer: Playwright (recommended — exact element clips)
+- For **HTML sources**: Playwright, required by the DOM fast path and used by the
+  raster route when present
   ```bash
   .venv/bin/pip install playwright && .venv/bin/playwright install chromium
   ```
-  or any local Google Chrome / Chromium / Edge, which needs no extra install.
+  The raster route alone can instead fall back to any local Google Chrome /
+  Chromium / Edge, which needs no extra install.
 - **macOS** for the Open Design installer path (skill directories live under
   `~/Library/Application Support/Open Design/…`). The skill itself is portable.
 - Optional, for the verification step: **LibreOffice** (`soffice`).
@@ -165,8 +196,10 @@ PDF-to-editable-PPTX/
 - The backdrop and icons stay raster. That is deliberate — it is what keeps the
   fidelity high.
 - Built for **single-slide or few-slide brand decks**, not 200-page documents.
-- HTML decks are captured as a raster (then rebuilt), not parsed into shapes. If the
-  HTML slide is not 16:9, build the PPTX at the matching slide size.
+- The HTML fast path covers the common CSS vocabulary (solid and linear-gradient
+  fills, borders, radii, text runs, inline SVG). Decks that lean on transforms,
+  radial gradients, box-shadows or blend modes want the raster route. If the HTML
+  slide is not 16:9, build the PPTX at the matching slide size.
 - `plugin/open-design.json` follows Open Design's `plugin.v1.json` schema but has
   not been validated by their `od plugin validate` tooling, which is not part of
   the shipped CLI.

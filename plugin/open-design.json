@@ -55,7 +55,9 @@
         "./scripts/measure_slide.py",
         "./scripts/fit_background.py",
         "./scripts/extract_icons.py",
-        "./scripts/render_html.py"
+        "./scripts/render_html.py",
+        "./scripts/extract_dom.py",
+        "./scripts/dom_to_pptx.py"
       ]
     }
   }

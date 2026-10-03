@@ -29,11 +29,13 @@ def Y(p):
 # --------------------------------------------------------------------------- #
 # fills / lines
 # --------------------------------------------------------------------------- #
-def set_fill(shape, hexv=None, alpha=None, grad=None):
+def set_fill(shape, hexv=None, alpha=None, grad=None, ang=5400000):
     """Solid or vertical gradient fill.
 
-    grad = [(pos%, 'RRGGBB'[, alpha%]), ...]  (pos 0 = top, 100 = bottom)
+    grad = [(pos%, 'RRGGBB'[, alpha%]), ...]  (pos 0 = start, 100 = end)
     alpha = 0..100 (percent opacity)
+    ang = gradient direction in 60000ths of a degree, clockwise from east.
+          5400000 (90 deg) = top -> bottom, the default.
     """
     spPr = shape._element.spPr
     for tag in ("a:solidFill", "a:gradFill", "a:noFill", "a:blipFill", "a:pattFill"):
@@ -51,7 +53,7 @@ def set_fill(shape, hexv=None, alpha=None, grad=None):
             if len(st) > 2 and st[2] is not None:
                 etree.SubElement(c, qn("a:alpha")).set("val", str(int(st[2] * 1000)))
         lin = etree.SubElement(g, qn("a:lin"))
-        lin.set("ang", "5400000")          # 90 deg = top -> bottom
+        lin.set("ang", str(int(ang)))
         lin.set("scaled", "1")
     else:
         f = etree.SubElement(spPr, qn("a:solidFill"))
@@ -110,14 +112,14 @@ def no_fill(shape):
 # shapes
 # --------------------------------------------------------------------------- #
 def roundrect(slide, x0, y0, x1, y1, radius_in=0.06, fill=None, alpha=None,
-              grad=None, line=None, lw=0.75):
+              grad=None, line=None, lw=0.75, ang=5400000):
     w, h = x1 - x0, y1 - y0
     shp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, X(x0), Y(y0), X(w), Y(h))
     wemu, hemu = int(w / 100 * SW), int(h / 100 * SH)
     shp.adjustments[0] = max(0.0, min(0.5, (radius_in * 914400) / max(1, min(wemu, hemu))))
     shp.shadow.inherit = False
     if grad:
-        set_fill(shp, grad=grad)
+        set_fill(shp, grad=grad, ang=ang)
     elif fill:
         set_fill(shp, fill, alpha)
     else:
@@ -185,7 +187,8 @@ VCORR = 0.026   # empirical: rendered ink sits low by ~0.026 %/pt of slide heigh
 
 
 def text(slide, x, yc, w, runs, font=None, size=None, bold=False, color="FFFFFF",
-         align=PP_ALIGN.LEFT, h=3.0, spacing=None, top=None, anchor=MSO_ANCHOR.MIDDLE):
+         align=PP_ALIGN.LEFT, h=3.0, spacing=None, top=None, anchor=MSO_ANCHOR.MIDDLE,
+         line_spacing_pt=None, wrap=True):
     """Add a text box whose INK CENTRE lands on `yc` (percent).
 
     runs: str  -> single run using (font, size, bold, color, spacing)
@@ -202,7 +205,7 @@ def text(slide, x, yc, w, runs, font=None, size=None, bold=False, color="FFFFFF"
         top = yc - h / 2.0 - VCORR * max(r[2] for r in runs)
     tb = slide.shapes.add_textbox(X(x), Y(top), X(w), Y(h))
     tf = tb.text_frame
-    tf.word_wrap = True
+    tf.word_wrap = wrap
     tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
     tf.vertical_anchor = anchor
     bodyPr = tf._txBody.find(qn("a:bodyPr"))
@@ -211,6 +214,8 @@ def text(slide, x, yc, w, runs, font=None, size=None, bold=False, color="FFFFFF"
     etree.SubElement(bodyPr, qn("a:noAutofit"))
     p = tf.paragraphs[0]
     p.alignment = align
+    if line_spacing_pt:
+        p.line_spacing = Pt(line_spacing_pt)
     for (t, fnt, sz, bd, col, sp) in runs:
         r = p.add_run()
         r.text = t

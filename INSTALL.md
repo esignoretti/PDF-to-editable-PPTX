@@ -62,14 +62,16 @@ Check what is missing at any time:
 ./install.sh --check
 ```
 
-For **HTML sources**, a renderer. Playwright gives exact element clips:
+For **HTML sources**, Playwright — required by the DOM fast path (`extract_dom.py`
+/ `dom_to_pptx.py`) and used by the raster route when present:
 
 ```bash
 ~/.od-skills/image-pdf-to-pptx/.venv/bin/pip install playwright
 ~/.od-skills/image-pdf-to-pptx/.venv/bin/playwright install chromium
 ```
 
-or rely on a local Google Chrome / Chromium / Edge, which needs no extra install.
+Without Playwright the raster route can still use a local Google Chrome / Chromium /
+Edge, but the DOM fast path is unavailable.
 
 Optional, only for the skill's self-verification step: **LibreOffice** (`soffice`).
 The skill renders its own PPTX back to an image and diffs it against the source, and
@@ -109,6 +111,8 @@ git pull
 | Skill installed but never triggers | Ask explicitly: "convert this slide PDF to an editable PPTX" |
 | HTML deck renders the wrong slide | `render_html.py deck.html --list-slides` then `--mode slide --slide N` |
 | HTML render is blurry / wrong scale | Pass `--scale 2`; the pipeline wants ~3840 px wide |
+| `extract_dom` reports warnings | Those slides use CSS the fast path punts on — run the raster route |
+| Padded text jumps to the top-left in the fast path | Text nodes must use the content box, not the border box |
 | Wrong colours reproduced | You are matching a broken PDF thumbnail; the skill samples the extracted raster — check the source PDF really has one embedded image |
 
 ## Using it without Open Design
